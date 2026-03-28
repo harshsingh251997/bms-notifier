@@ -51,60 +51,41 @@ def is_disabled(locator):
             return True
         if "pointer-events: none" in style_attr.lower():
             return True
+        if "opacity: 0.5" in style_attr.lower():  # greyed out
+            return True
         return False
     except:
         return False
 
 
 def get_day_candidates(page):
-    matches = page.get_by_text(DAY_PATTERN)
-    results = []
-    count = matches.count()
-
-    for i in range(count):
-        loc = matches.nth(i)
+    # PC UI improvements: try structured date tabs first
+    selectors = [
+        '[role="tab"]',
+        'button:has-text("SAT"), button:has-text("SUN"), button:has-text("MON")',
+        '[data-testid*="date"], .date-tab, .datepicker-tab',
+        '.show-date-tab, [class*="date-tab"]'
+    ]
+    
+    candidates = []
+    
+    for selector in selectors:
         try:
-            text = loc.inner_text().strip().upper()
-            if DAY_PATTERN.search(text):
-                results.append((text, loc))
+            tabs = page.locator(selector)
+            count = tabs.count()
+            for i in range(count):
+                loc = tabs.nth(i)
+                text = loc.inner_text().strip().upper()
+                if DAY_PATTERN.search(text):
+                    candidates.append((text, loc))
+                    break  # one per selector
         except:
             pass
-
-    return results
-
-
-def main():
-    previous_state = load_state()
-    current_state = {}
-
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page(viewport={"width": 1280, "height": 1600})
-        page.goto(BOOKMYSHOW_URL, wait_until="networkidle", timeout=60000)
-        page.wait_for_timeout(3000)
-
-        candidates = get_day_candidates(page)
-
-        for text, loc in candidates:
-            current_state[text] = is_disabled(loc)
-
-        browser.close()
-
-    newly_available = []
-    for day_text, curr_disabled in current_state.items():
-        prev_disabled = previous_state.get(day_text)
-        if prev_disabled is True and curr_disabled is False:
-            newly_available.append(day_text)
-
-    save_state(current_state)
-
-    if newly_available:
-        msg = "BookMyShow alert: booking is now open for:\n" + "\n".join(newly_available) + f"\nURL: {BOOKMYSHOW_URL}"
-        send_telegram_message(msg)
-        print("Alert sent for:", newly_available)
-    else:
-        print("No new days became available.")
-
-
-if __name__ == "__main__":
-    main()
+    
+    # Fallback: text-based search (works on both mobile/PC)
+    if len(candidates) < 3:  # if fewer than expected days found
+        matches = page.get_by_text(DAY_PATTERN)
+        count = matches.count()
+        seen_texts = {text for text, _ in candidates}
+        
+        for i 
