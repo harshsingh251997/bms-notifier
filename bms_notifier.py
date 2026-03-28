@@ -1,12 +1,15 @@
 import os
 import requests
 from pathlib import Path
+from datetime import datetime
 from playwright.sync_api import sync_playwright
 
 BOOKMYSHOW_URL = "https://in.bookmyshow.com/movies/pune/project-hail-mary/buytickets/ET00481564/20260328"
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 STATE_FILE = "state.txt"
+
+DISABLED_CLASS = "hzcALk"
 
 
 def send_telegram_message(message):
@@ -33,33 +36,53 @@ def save_state(state):
     Path(STATE_FILE).write_text("\n".join(lines) + "\n")
 
 
+def date_id_to_label(date_id):
+    try:
+        dt = datetime.strptime(date_id, "%Y%m%d")
+        return dt.strftime("%a").upper() + " " + str(dt.day)
+    except:
+        return date_id
+
+
 def check_days(page):
-    import re
-
-    # Scroll to trigger lazy loading
     page.evaluate("window.scrollTo(0, 500)")
-    page.wait_for_timeout(3000)
+    page.wait_for_timeout(2000)
 
-    html = page.inner_html("body")
-    print(f"Total HTML length: {len(html)}")
+    js_script = """
+        () => {
+            const results = {};
+            const dateTabs = document.querySelectorAll('div[id^="2026"]');
+            for (const tab of dateTabs) {
+                const id = tab.getAttribute("id");
+                if (!/^\d{8}$/.test(id)) continue;
+                const classes = tab.getAttribute("class") || "";
+                const isDisabled = classes.includes("hzcALk");
+                results[id] = {
+                    classes: classes,
+                    bookable: !isDisabled
+                };
+            }
+            return results;
+        }
+    """
+    raw = page.evaluate(js_script)
+    print("Raw DOM results:", raw)
 
-    # Find where SAT appears in HTML
-    sat_idx = html.upper().find("SAT")
-    if sat_idx >= 0:
-        print("Found SAT at index:", sat_idx)
-        print("Context around SAT:")
-        print(html[max(0, sat_idx - 200):sat_idx + 500])
-    else:
-        print("SAT not found in HTML - page not fully loaded")
-        print("HTML chunk 3000-6000:", html[3000:6000])
+    results = {}
+    for date_id, info in raw.items():
+        label = date_id_to_label(date_id)
+        results[label] = info["bookable"]
+        print(f"  {label} (id={date_id}): bookable={info['bookable']} | class={info['classes']}")
 
-    return {}
+    return results
 
 
 def main():
     previous_state = load_state()
+    current_state = {}
 
     print(f"Checking: {BOOKMYSHOW_URL}")
+    print(f"Previous state: {previous_state}")
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -82,10 +105,25 @@ def main():
         page.wait_for_timeout(10000)
         print("Page title:", page.title())
 
-        check_days(page)
+        current_state = check_days(page)
         browser.close()
 
-    print("Done - check HTML output above to understand structure")
+    print(f"Current state: {current_state}")
+
+    newly_available = []
+    for day_text, is_bookable in current_state.items():
+        was_bookable = previous_state.get(day_text, False)
+        if is_bookable and not was_bookable:
+            newly_available.append(day_text)
+
+    save_state(current_state)
+
+    if newly_available:
+        msg = "🚨 BookMyShow: Booking now open!\n" + "\n".join(newly_available) + f"\n\n{BOOKMYSHOW_URL}"
+        send_telegram_message(msg)
+        print("Alert sent for:", newly_available)
+    else:
+        print("No new days became available.")
 
 
 if __name__ == "__main__":
