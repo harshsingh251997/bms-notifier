@@ -39,7 +39,6 @@ def save_state(state):
 def get_day_candidates(page):
     # Nuclear option: scan ALL page text
     page_text = page.inner_text("body").lower()
-    print("Page text preview:", page_text[:300] + "...")
     
     matches = DAY_PATTERN.findall(page_text)
     day_set = set()
