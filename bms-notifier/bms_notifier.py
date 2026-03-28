@@ -4,7 +4,7 @@ import requests
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
-BOOKMYSHOW_URL = "PASTE_YOUR_BOOKMYSHOW_LINK_HERE"
+BOOKMYSHOW_URL = "https://in.bookmyshow.com/movies/pune/project-hail-mary/buytickets/ET00481564/20260328"
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 STATE_FILE = "state.txt"
