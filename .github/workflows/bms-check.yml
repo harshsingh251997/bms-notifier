@@ -2,30 +2,21 @@ name: BookMyShow Checker
 
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "*/15 * * * *"  # every 15 minutes
   workflow_dispatch:
 
 jobs:
   check:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-
-      - name: Install dependencies
-        run: |
-          pip install --upgrade pip
+          python-version: '3.11'
+      - run: |
           pip install playwright requests
           playwright install --with-deps chromium
-
-      - name: Run BookMyShow checker
+      - run: python bms_notifier.py
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python bms_notifier.py
