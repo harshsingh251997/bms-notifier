@@ -2,11 +2,8 @@ name: BookMyShow Checker
 
 on:
   schedule:
-    - cron: "*/10 * * * *"  # every 10 minutes
+    - cron: "*/10 * * * *"
   workflow_dispatch:
-
-permissions:
-  contents: write
 
 jobs:
   check:
@@ -32,9 +29,3 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python bms_notifier.py
-
-      - name: Commit updated state file
-        uses: EndBug/add-and-commit@v9
-        with:
-          add: "state.txt"
-          message: "Update BookMyShow state"
