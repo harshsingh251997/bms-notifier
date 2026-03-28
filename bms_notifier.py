@@ -1,5 +1,4 @@
 import os
-import re
 import requests
 from pathlib import Path
 from playwright.sync_api import sync_playwright
@@ -35,39 +34,9 @@ def save_state(state):
 
 
 def check_days(page):
-    def check_days(page):
-    # Debug: dump first 3000 chars of body HTML
     html = page.inner_html("body")
     print("HTML PREVIEW:", html[:3000])
-    
-    js_script = """
-        () => {
-            const results = {};
-            const allElements = document.querySelectorAll("*");
-            for (const el of allElements) {
-                const text = (el.innerText || el.textContent || "").trim().toUpperCase();
-                const dayMatch = text.match(/^(SAT|SUN|MON|TUE|WED|THU|FRI)[\\s\\n]*(\\d{1,2})$/);
-                if (dayMatch) {
-                    const key = dayMatch[1] + " " + dayMatch[2];
-                    const style = window.getComputedStyle(el);
-                    const isVisible = style.display !== "none" && style.visibility !== "hidden";
-                    const isDisabled = (
-                        el.disabled === true ||
-                        el.getAttribute("disabled") !== null ||
-                        el.getAttribute("aria-disabled") === "true" ||
-                        style.pointerEvents === "none" ||
-                        parseFloat(style.opacity) < 0.6 ||
-                        (el.className && typeof el.className === "string" && el.className.toLowerCase().includes("disabled"))
-                    );
-                    if (isVisible) {
-                        results[key] = !isDisabled;
-                    }
-                }
-            }
-            return results;
-        }
-    """
-    return page.evaluate(js_script)
+
     js_script = """
         () => {
             const results = {};
