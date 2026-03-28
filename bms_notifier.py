@@ -34,45 +34,32 @@ def save_state(state):
 
 
 def check_days(page):
-    html = page.inner_html("body")
-    print("HTML PREVIEW:", html[:3000])
+    import re
 
-    js_script = """
-        () => {
-            const results = {};
-            const allElements = document.querySelectorAll("*");
-            for (const el of allElements) {
-                const text = (el.innerText || el.textContent || "").trim().toUpperCase();
-                const dayMatch = text.match(/^(SAT|SUN|MON|TUE|WED|THU|FRI)[\\s\\n]*(\\d{1,2})$/);
-                if (dayMatch) {
-                    const key = dayMatch[1] + " " + dayMatch[2];
-                    const style = window.getComputedStyle(el);
-                    const isVisible = style.display !== "none" && style.visibility !== "hidden";
-                    const isDisabled = (
-                        el.disabled === true ||
-                        el.getAttribute("disabled") !== null ||
-                        el.getAttribute("aria-disabled") === "true" ||
-                        style.pointerEvents === "none" ||
-                        parseFloat(style.opacity) < 0.6 ||
-                        (el.className && typeof el.className === "string" && el.className.toLowerCase().includes("disabled"))
-                    );
-                    if (isVisible) {
-                        results[key] = !isDisabled;
-                    }
-                }
-            }
-            return results;
-        }
-    """
-    return page.evaluate(js_script)
+    # Scroll to trigger lazy loading
+    page.evaluate("window.scrollTo(0, 500)")
+    page.wait_for_timeout(3000)
+
+    html = page.inner_html("body")
+    print(f"Total HTML length: {len(html)}")
+
+    # Find where SAT appears in HTML
+    sat_idx = html.upper().find("SAT")
+    if sat_idx >= 0:
+        print("Found SAT at index:", sat_idx)
+        print("Context around SAT:")
+        print(html[max(0, sat_idx - 200):sat_idx + 500])
+    else:
+        print("SAT not found in HTML - page not fully loaded")
+        print("HTML chunk 3000-6000:", html[3000:6000])
+
+    return {}
 
 
 def main():
     previous_state = load_state()
-    current_state = {}
 
     print(f"Checking: {BOOKMYSHOW_URL}")
-    print(f"Previous state: {previous_state}")
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -92,32 +79,13 @@ def main():
         """)
 
         page.goto(BOOKMYSHOW_URL, wait_until="networkidle", timeout=90000)
-        page.wait_for_timeout(8000)
-
+        page.wait_for_timeout(10000)
         print("Page title:", page.title())
 
-        day_data = check_days(page)
-        print(f"Raw day data from DOM: {day_data}")
+        check_days(page)
         browser.close()
 
-    for day, is_bookable in day_data.items():
-        current_state[day] = is_bookable
-
-    newly_available = []
-    for day_text, is_bookable in current_state.items():
-        was_bookable = previous_state.get(day_text, False)
-        if is_bookable and not was_bookable:
-            newly_available.append(day_text)
-
-    save_state(current_state)
-
-    if newly_available:
-        msg = "Booking is now open for:\n" + "\n".join(newly_available) + f"\n\n{BOOKMYSHOW_URL}"
-        send_telegram_message(msg)
-        print("Alert sent for:", newly_available)
-    else:
-        print("No new days became available.")
-        print("Current state:", current_state)
+    print("Done - check HTML output above to understand structure")
 
 
 if __name__ == "__main__":
