@@ -1,0 +1,7 @@
+SAT 29|true
+SUN 30|true
+MON 30|false
+TUE 31|false
+WED 1|false
+THU 2|false
+FRI 3|false
