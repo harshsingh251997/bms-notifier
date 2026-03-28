@@ -9,8 +9,6 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 STATE_FILE = "state.txt"
 
-DAY_PATTERN = re.compile(r"\b(SAT|SUN|MON|TUE|WED|THU|FRI)\b\s*\d{1,2}\b", re.IGNORECASE)
-
 
 def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -26,78 +24,98 @@ def load_state():
         line = line.strip()
         if not line or "|" not in line:
             continue
-        day_text, disabled = line.split("|", 1)
-        state[day_text.strip()] = disabled.strip().lower() == "true"
+        day_text, status = line.split("|", 1)
+        state[day_text.strip()] = status.strip().lower() == "true"
     return state
 
 
 def save_state(state):
-    lines = [f"{day}|{str(disabled)}" for day, disabled in state.items()]
+    lines = [f"{day}|{str(status)}" for day, status in state.items()]
     Path(STATE_FILE).write_text("\n".join(lines) + "\n")
 
 
-def get_day_candidates(page):
-    # Nuclear option: scan ALL page text
-    page_text = page.inner_text("body").lower()
-    
-    matches = DAY_PATTERN.findall(page_text)
-    day_set = set()
-    
-    for match in matches:
-        day = match.upper()
-        if day not in day_set:
-            day_set.add(day)
-    
-    candidates = [(day, None) for day in sorted(day_set)]
-    print(f"TEXT SCAN found {len(candidates)} unique days: {[d for d, _ in candidates]}")
-    return candidates
+def check_days(page):
+    js_script = """
+        () => {
+            const results = {};
+            const allElements = document.querySelectorAll("*");
+            for (const el of allElements) {
+                const text = (el.innerText || el.textContent || "").trim().toUpperCase();
+                const dayMatch = text.match(/^(SAT|SUN|MON|TUE|WED|THU|FRI)[\\s\\n]*(\\d{1,2})$/);
+                if (dayMatch) {
+                    const key = dayMatch[1] + " " + dayMatch[2];
+                    const style = window.getComputedStyle(el);
+                    const isVisible = style.display !== "none" && style.visibility !== "hidden";
+                    const isDisabled = (
+                        el.disabled === true ||
+                        el.getAttribute("disabled") !== null ||
+                        el.getAttribute("aria-disabled") === "true" ||
+                        style.pointerEvents === "none" ||
+                        parseFloat(style.opacity) < 0.6 ||
+                        (el.className && typeof el.className === "string" && el.className.toLowerCase().includes("disabled"))
+                    );
+                    if (isVisible) {
+                        results[key] = !isDisabled;
+                    }
+                }
+            }
+            return results;
+        }
+    """
+    return page.evaluate(js_script)
 
 
 def main():
     previous_state = load_state()
     current_state = {}
-    print("Previous state:", previous_state)
 
     print(f"Checking: {BOOKMYSHOW_URL}")
-    
+    print(f"Previous state: {previous_state}")
+
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         context = browser.new_context(
             viewport={"width": 1920, "height": 1080},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            extra_http_headers={
+                "Accept-Language": "en-US,en;q=0.9",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                "Cache-Control": "max-age=0"
+            }
         )
         page = context.new_page()
-        
+        page.add_init_script("""
+            Object.defineProperty(navigator, "webdriver", { get: () => undefined });
+            window.chrome = { runtime: {} };
+        """)
+
         page.goto(BOOKMYSHOW_URL, wait_until="networkidle", timeout=90000)
-        page.wait_for_timeout(10000)
+        page.wait_for_timeout(8000)
 
-        print("Page title:", page.title()[:100])
+        print("Page title:", page.title())
 
-        candidates = get_day_candidates(page)
-        
-        # Assume all found days are available (conservative)
-        for text, _ in candidates:
-            current_state[text] = False  # assume available if found
-
+        day_data = check_days(page)
+        print(f"Raw day data from DOM: {day_data}")
         browser.close()
 
+    for day, is_bookable in day_data.items():
+        current_state[day] = is_bookable
+
     newly_available = []
-    all_current_days = set(current_state.keys())
-    
-    # Alert for ANY days found that were previously marked unavailable
-    for day_text in all_current_days:
-        prev_state = previous_state.get(day_text, True)  # default unavailable
-        if prev_state:  # was unavailable before
+    for day_text, is_bookable in current_state.items():
+        was_bookable = previous_state.get(day_text, False)
+        if is_bookable and not was_bookable:
             newly_available.append(day_text)
 
     save_state(current_state)
 
     if newly_available:
-        msg = "🚨 BookMyShow alert: Days now visible:\n" + "\n".join(newly_available) + f"\n\n{BOOKMYSHOW_URL}"
+        msg = "Booking is now open for:\n" + "\n".join(newly_available) + f"\n\n{BOOKMYSHOW_URL}"
         send_telegram_message(msg)
-        print("✅ Alert sent for:", newly_available)
+        print("Alert sent for:", newly_available)
     else:
-        print("ℹ️ No new days detected.")
+        print("No new days became available.")
+        print("Current state:", current_state)
 
 
 if __name__ == "__main__":
