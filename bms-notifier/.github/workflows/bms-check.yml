@@ -1,0 +1,40 @@
+name: BookMyShow Checker
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"  # every 10 minutes
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install playwright requests
+          playwright install --with-deps chromium
+
+      - name: Run BookMyShow checker
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python bms_notifier.py
+
+      - name: Commit updated state file
+        uses: EndBug/add-and-commit@v9
+        with:
+          add: "state.txt"
+          message: "Update BookMyShow state"
